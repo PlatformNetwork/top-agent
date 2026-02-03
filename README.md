@@ -98,36 +98,34 @@ sequenceDiagram
     Core->>Tools: shell pwd and ls
     Tools-->>Core: Initial state
     
-    rect rgb(240, 240, 240)
-        Note over Core,Tools: Main Loop - max 200 iterations
-        Core->>Context: manage_context messages
-        Context->>Context: Prune images if over 10
-        Context->>Context: Estimate tokens
-        alt Over 60 percent threshold
-            Context->>Context: Prune old tool outputs
-            alt Still over threshold
-                Context->>LLM: AI Compaction summarize
-                LLM-->>Context: Summary
-            end
+    Note over Core,Tools: Main Loop - max 200 iterations
+    Core->>Context: manage_context messages
+    Context->>Context: Prune images if over 10
+    Context->>Context: Estimate tokens
+    alt Over 60 percent threshold
+        Context->>Context: Prune old tool outputs
+        alt Still over threshold
+            Context->>LLM: AI Compaction summarize
+            LLM-->>Context: Summary
         end
-        Context-->>Core: Managed messages
-        
-        Core->>Core: Apply prompt caching
-        Core->>LLM: chat messages tools
-        LLM-->>Core: Response
-        
-        alt Has tool calls
-            Core->>Tools: execute tool_name args
-            Tools-->>Core: ToolResult
-            Core->>Core: Add results to messages
-        else No tool calls
-            alt No verification yet
-                Core->>Core: Inject verification prompt
-            else First verification done
-                Core->>Core: Inject confirmation prompt
-            else Confirmed
-                Core->>Agent: Task complete
-            end
+    end
+    Context-->>Core: Managed messages
+    
+    Core->>Core: Apply prompt caching
+    Core->>LLM: chat messages tools
+    LLM-->>Core: Response
+    
+    alt Has tool calls
+        Core->>Tools: execute tool_name args
+        Tools-->>Core: ToolResult
+        Core->>Core: Add results to messages
+    else No tool calls
+        alt No verification yet
+            Core->>Core: Inject verification prompt
+        else First verification done
+            Core->>Core: Inject confirmation prompt
+        else Confirmed
+            Core->>Agent: Task complete
         end
     end
     
