@@ -6,7 +6,7 @@ High-performance autonomous coding agent that achieved **top ranking** at [Termi
 
 ```mermaid
 flowchart TB
-    subgraph Entry["Entry Point"]
+    subgraph Entry["Entry Point (agent.py)"]
         A[agent.py] --> B[AgentContext]
         A --> C[LiteLLMClient]
         A --> D[ToolRegistry]
@@ -14,9 +14,9 @@ flowchart TB
 
     subgraph MainLoop["Main Agent Loop (loop.py)"]
         E[Initialize Messages] --> F[Get Initial State]
-        F --> G{Context Check}
-        G -->|Over Threshold| H[manage_context]
-        G -->|OK| I[Apply Caching]
+        F --> G{Context Over 60%?}
+        G -->|Yes| H[manage_context]
+        G -->|No| I[Apply Caching]
         H --> I
         I --> J[Call LLM]
         J --> K{Has Tool Calls?}
@@ -24,33 +24,49 @@ flowchart TB
         L --> M[Add Results to Messages]
         M --> G
         K -->|No| N{Verification Phase}
-        N -->|None| O[Request First Verification]
+        N -->|None| O[Request Verification]
         O --> G
         N -->|First| P[Request Confirmation]
         P --> G
         N -->|Confirmed| Q[Task Complete]
     end
 
-    subgraph ContextMgmt["Context Management (compaction.py)"]
-        H --> H1[Prune Old Images]
-        H1 --> H2[Estimate Tokens]
+    Entry --> MainLoop
+```
+
+## Context Management Flow
+
+```mermaid
+flowchart TD
+    subgraph ContextMgmt["manage_context()"]
+        H1[Prune Old Images] --> H2[Estimate Tokens]
         H2 --> H3{Over 60%?}
         H3 -->|Yes| H4[Prune Tool Outputs]
         H4 --> H5{Still Over?}
         H5 -->|Yes| H6[AI Compaction]
-        H6 --> H7[Return Compacted]
+        H6 --> H7[Return Messages]
         H5 -->|No| H7
         H3 -->|No| H7
     end
+```
 
-    subgraph Caching["Prompt Caching"]
-        I --> I1[Cache System Messages]
-        I1 --> I2[Cache Last 2 Messages]
-        I2 --> I3[Return Cached Messages]
+## Prompt Caching Flow
+
+```mermaid
+flowchart LR
+    subgraph Caching["apply_caching()"]
+        I1[Get Messages] --> I2[Mark System Messages]
+        I2 --> I3[Mark Last 2 Messages]
+        I3 --> I4[Return Cached Messages]
     end
+```
 
-    subgraph Tools["Tool Registry"]
-        L --> T1[shell_command]
+## Tool Registry
+
+```mermaid
+flowchart LR
+    subgraph Tools["ToolRegistry.execute()"]
+        L[Tool Call] --> T1[shell_command]
         L --> T2[read_file]
         L --> T3[write_file]
         L --> T4[apply_patch]
@@ -61,10 +77,6 @@ flowchart TB
         L --> T9[spawn_process]
         L --> T10[kill_process]
     end
-
-    B --> E
-    C --> J
-    D --> L
 ```
 
 ## Detailed Flow Diagram
