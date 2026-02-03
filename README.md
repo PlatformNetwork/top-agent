@@ -1,168 +1,279 @@
-# BaseAgent - SDK 3.0
+# Top Agent - Terminal Challenge Checkpoint 4 Winner
 
-High-performance autonomous agent for [Term Challenge](https://term.challenge). **Does NOT use term_sdk** - fully autonomous with litellm.
+High-performance autonomous coding agent that achieved **top ranking** at [Terminal Challenge](https://term.challenge) Checkpoint 4. Built with Claude Opus 4.5 via OpenRouter, featuring advanced context management, prompt caching, and self-verification.
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Entry["Entry Point"]
+        A[agent.py] --> B[AgentContext]
+        A --> C[LiteLLMClient]
+        A --> D[ToolRegistry]
+    end
+
+    subgraph MainLoop["Main Agent Loop (loop.py)"]
+        E[Initialize Messages] --> F[Get Initial State]
+        F --> G{Context Check}
+        G -->|Over Threshold| H[manage_context]
+        G -->|OK| I[Apply Caching]
+        H --> I
+        I --> J[Call LLM]
+        J --> K{Has Tool Calls?}
+        K -->|Yes| L[Execute Tools]
+        L --> M[Add Results to Messages]
+        M --> G
+        K -->|No| N{Verification Phase}
+        N -->|None| O[Request First Verification]
+        O --> G
+        N -->|First| P[Request Confirmation]
+        P --> G
+        N -->|Confirmed| Q[Task Complete]
+    end
+
+    subgraph ContextMgmt["Context Management (compaction.py)"]
+        H --> H1[Prune Old Images]
+        H1 --> H2[Estimate Tokens]
+        H2 --> H3{Over 60%?}
+        H3 -->|Yes| H4[Prune Tool Outputs]
+        H4 --> H5{Still Over?}
+        H5 -->|Yes| H6[AI Compaction]
+        H6 --> H7[Return Compacted]
+        H5 -->|No| H7
+        H3 -->|No| H7
+    end
+
+    subgraph Caching["Prompt Caching"]
+        I --> I1[Cache System Messages]
+        I1 --> I2[Cache Last 2 Messages]
+        I2 --> I3[Return Cached Messages]
+    end
+
+    subgraph Tools["Tool Registry"]
+        L --> T1[shell_command]
+        L --> T2[read_file]
+        L --> T3[write_file]
+        L --> T4[apply_patch]
+        L --> T5[grep_files]
+        L --> T6[list_dir]
+        L --> T7[view_image]
+        L --> T8[web_search]
+        L --> T9[spawn_process]
+        L --> T10[kill_process]
+    end
+
+    B --> E
+    C --> J
+    D --> L
+```
+
+## Detailed Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent as agent.py
+    participant Loop as loop.py
+    participant LLM as LiteLLMClient
+    participant Context as compaction.py
+    participant Tools as ToolRegistry
+
+    User->>Agent: --instruction "task"
+    Agent->>Agent: Initialize Context, LLM, Tools
+    Agent->>Loop: run_agent_loop()
+    
+    Loop->>Loop: Build initial messages
+    Loop->>Tools: shell("pwd && ls -la")
+    Tools-->>Loop: Initial state
+    
+    loop Main Loop (max 200 iterations)
+        Loop->>Context: manage_context(messages)
+        Context->>Context: Prune images if > 10
+        Context->>Context: Estimate tokens
+        alt Over 60% threshold
+            Context->>Context: Prune old tool outputs
+            alt Still over threshold
+                Context->>LLM: AI Compaction (summarize)
+                LLM-->>Context: Summary
+            end
+        end
+        Context-->>Loop: Managed messages
+        
+        Loop->>Loop: Apply prompt caching
+        Loop->>LLM: chat(messages, tools)
+        LLM-->>Loop: Response
+        
+        alt Has tool calls
+            loop For each tool call
+                Loop->>Tools: execute(tool_name, args)
+                Tools-->>Loop: ToolResult
+            end
+            Loop->>Loop: Add results to messages
+        else No tool calls
+            alt No verification yet
+                Loop->>Loop: Inject verification prompt
+            else First verification done
+                Loop->>Loop: Inject confirmation prompt
+            else Confirmed
+                Loop->>Agent: Task complete
+            end
+        end
+    end
+    
+    Agent-->>User: Done
+```
+
+## Tool Execution Flow
+
+```mermaid
+flowchart LR
+    subgraph Input
+        A[Tool Call] --> B{Check Cache}
+    end
+    
+    subgraph Execution
+        B -->|Hit| C[Return Cached]
+        B -->|Miss| D[Execute Tool]
+        D --> E{Success?}
+        E -->|Yes| F[Cache Result]
+        E -->|No| G[Add Guidance]
+        F --> H[Return Result]
+        G --> H
+    end
+    
+    subgraph Output
+        C --> I[ToolResult]
+        H --> I
+        I --> J[Truncate if needed]
+        J --> K[Add to Messages]
+    end
+```
+
+## Available Tools
+
+| Tool | Description | Parameters | Cacheable |
+|------|-------------|------------|-----------|
+| `shell_command` | Execute shell commands | `command`, `workdir?`, `timeout_ms?` | No |
+| `read_file` | Read file with line numbers | `file_path`, `offset?`, `limit?` | Yes |
+| `write_file` | Create/overwrite files | `file_path`, `content` | No |
+| `apply_patch` | Apply unified diff patches | `patch` | No |
+| `grep_files` | Search with ripgrep | `pattern`, `include?`, `path?`, `limit?` | Yes |
+| `list_dir` | List directory recursively | `dir_path?`, `depth?`, `limit?` | Yes |
+| `view_image` | Analyze images (returns base64) | `path` | Yes |
+| `web_search` | Search the web | `query`, `num_results?`, `search_type?` | Yes |
+| `update_plan` | Update task plan | `steps`, `explanation?` | No |
+| `transcript` | Analyze video with Gemini 3 | `url`, `instruction` | No |
+| `spawn_process` | Start background process | `command`, `cwd?`, `stdout_path?` | No |
+| `kill_process` | Terminate process by PID | `pid`, `signal?` | No |
+| `wait_for_port` | Wait for TCP port | `port`, `host?`, `timeout_sec?` | No |
+| `wait_for_file` | Wait for file existence | `path`, `timeout_sec?`, `min_size_bytes?` | No |
+| `run_until_file` | Run command until file exists | `command`, `file_path`, `timeout_sec?` | No |
+
+## Core Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Entry Point | `agent.py` | CLI interface, initializes all components |
+| Agent Loop | `src/core/loop.py` | Main agentic loop with verification |
+| Context Management | `src/core/compaction.py` | Token management, pruning, AI compaction |
+| LLM Client | `src/llm/client.py` | LiteLLM wrapper with cost tracking |
+| Tool Registry | `src/tools/registry.py` | Tool dispatch, caching, statistics |
+| System Prompt | `src/prompts/system.py` | Codex-inspired autonomous prompt |
+| Output Events | `src/output/jsonl.py` | JSONL event emission for SDK |
+
+## Key Features
+
+### 1. Prompt Caching (90% Cost Reduction)
+```mermaid
+flowchart LR
+    A[Messages] --> B[Mark System Messages]
+    B --> C[Mark Last 2 Messages]
+    C --> D[Send to API]
+    D --> E{Cache Hit?}
+    E -->|Yes| F[Use Cached Prefix]
+    E -->|No| G[Full Processing]
+    F --> H[Only Process New Tokens]
+    G --> H
+```
+
+### 2. Context Management Strategy
+```mermaid
+flowchart TD
+    A[Check Token Usage] --> B{< 60% of 200K?}
+    B -->|Yes| C[No Action]
+    B -->|No| D[Prune Old Tool Outputs]
+    D --> E{Still Over?}
+    E -->|No| F[Done]
+    E -->|Yes| G[AI Compaction]
+    G --> H[Summarize Old Messages]
+    H --> I[Keep Summary + Recent]
+    I --> F
+```
+
+### 3. Self-Verification System
+```mermaid
+stateDiagram-v2
+    [*] --> Working
+    Working --> FirstVerification: No more tool calls
+    FirstVerification --> Confirmation: Verification complete
+    Confirmation --> Complete: All requirements met
+    Confirmation --> Working: Issues found
+    Complete --> [*]
+```
+
+## Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `model` | `openrouter/anthropic/claude-opus-4.5` | LLM model |
+| `max_tokens` | `16384` | Max output tokens per request |
+| `max_iterations` | `200` | Max loop iterations |
+| `cost_limit` | `100.0` | Max cost in USD |
+| `auto_compact_threshold` | `0.6` | Trigger compaction at 60% |
+| `cache_enabled` | `true` | Enable prompt caching |
+| `prune_protect` | `40000` | Protect last N tokens from pruning |
 
 ## Installation
 
 ```bash
-# Via pyproject.toml
-pip install .
-
-# Via requirements.txt
+pip install -e .
+# or
 pip install -r requirements.txt
 ```
 
 ## Usage
 
 ```bash
+export OPENROUTER_API_KEY="your-key"
 python agent.py --instruction "Your task here..."
 ```
 
-The agent receives the instruction via `--instruction` and executes the task autonomously.
-
-## Mandatory Architecture
-
-> **IMPORTANT**: Agents MUST follow these rules to work correctly.
-
-### 1. Project Structure (MANDATORY)
-
-Agents **MUST** be structured projects, NOT single files:
+## Project Structure
 
 ```
-my-agent/
-├── agent.py              # Entry point with --instruction
-├── src/                  # Modules
+top-agent/
+├── agent.py                 # Entry point
+├── src/
 │   ├── core/
-│   │   ├── loop.py       # Main loop
-│   │   └── compaction.py # Context management (MANDATORY)
+│   │   ├── loop.py          # Main agent loop
+│   │   ├── compaction.py    # Context management
+│   │   └── session.py       # Session handling
 │   ├── llm/
-│   │   └── client.py     # LLM client (litellm)
-│   └── tools/
-│       └── ...           # Available tools
-├── requirements.txt      # Dependencies
-└── pyproject.toml        # Project config
+│   │   └── client.py        # LiteLLM client
+│   ├── tools/
+│   │   ├── registry.py      # Tool dispatcher
+│   │   ├── shell.py         # Shell execution
+│   │   ├── apply_patch.py   # Patch application
+│   │   └── ...              # Other tools
+│   ├── prompts/
+│   │   ├── system.py        # System prompt
+│   │   └── templates.py     # Verification prompts
+│   └── output/
+│       └── jsonl.py         # Event emission
+├── rules/                   # Agent development guidelines
+└── astuces/                 # Practical techniques
 ```
-
-### 2. Session Management (MANDATORY)
-
-Agents **MUST** maintain complete conversation history:
-
-```python
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": instruction},
-]
-
-# Add each exchange
-messages.append({"role": "assistant", "content": response})
-messages.append({"role": "tool", "tool_call_id": id, "content": result})
-```
-
-### 3. Context Compaction (MANDATORY)
-
-Compaction is **CRITICAL** for:
-- Avoiding "context too long" errors
-- Preserving critical information
-- Enabling complex multi-step tasks
-- Improving response coherence
-
-```python
-# Recommended threshold: 85% of context window
-AUTO_COMPACT_THRESHOLD = 0.85
-
-# 2-step strategy:
-# 1. Pruning: Remove old tool outputs
-# 2. AI Compaction: Summarize conversation if pruning insufficient
-```
-
-## Features
-
-### LLM Client (litellm)
-
-```python
-from src.llm.client import LiteLLMClient
-
-llm = LiteLLMClient(
-    model="openrouter/anthropic/claude-opus-4.5",
-    temperature=0.0,
-    max_tokens=16384,
-)
-
-response = llm.chat(messages, tools=tool_specs)
-```
-
-### Prompt Caching
-
-Caches system and recent messages to reduce costs:
-- Cache hit rate: **90%+** on long conversations
-- Significant API cost reduction
-
-### Self-Verification
-
-Before completing, the agent automatically:
-1. Re-reads the original instruction
-2. Verifies each requirement
-3. Only confirms completion if everything is validated
-
-### Context Management
-
-- **Token-based overflow detection** (not message count)
-- **Tool output pruning** (removes old outputs)
-- **AI compaction** (summarizes if needed)
-- **Middle-out truncation** for large outputs
-
-## Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `shell_command` | Execute shell commands |
-| `read_file` | Read files with pagination |
-| `write_file` | Create/overwrite files |
-| `apply_patch` | Apply patches |
-| `grep_files` | Search with ripgrep |
-| `list_dir` | List directories |
-| `view_image` | Analyze images |
-
-## Configuration
-
-See `src/config/defaults.py`:
-
-```python
-CONFIG = {
-    "model": "openrouter/anthropic/claude-opus-4.5",
-    "max_tokens": 16384,
-    "max_iterations": 200,
-    "auto_compact_threshold": 0.85,
-    "prune_protect": 40_000,
-    "cache_enabled": True,
-}
-```
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `OPENROUTER_API_KEY` | OpenRouter API key |
-
-## Documentation
-
-### Rules - Development Guidelines
-
-See [rules/](rules/) for comprehensive guides:
-
-- [Architecture Patterns](rules/02-architecture-patterns.md) - **Mandatory project structure**
-- [LLM Usage Guide](rules/06-llm-usage-guide.md) - **Using litellm**
-- [Best Practices](rules/05-best-practices.md)
-- [Error Handling](rules/08-error-handling.md)
-
-### Tips - Practical Techniques
-
-See [astuces/](astuces/) for techniques:
-
-- [Prompt Caching](astuces/01-prompt-caching.md)
-- [Context Management](astuces/03-context-management.md)
-- [Local Testing](astuces/09-local-testing.md)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE).
+MIT License
