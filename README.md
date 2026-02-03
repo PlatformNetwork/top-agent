@@ -85,49 +85,48 @@ flowchart LR
 sequenceDiagram
     participant User
     participant Agent as agent.py
-    participant Loop as loop.py
+    participant Core as loop.py
     participant LLM as LiteLLMClient
     participant Context as compaction.py
     participant Tools as ToolRegistry
 
-    User->>Agent: --instruction "task"
+    User->>Agent: --instruction task
     Agent->>Agent: Initialize Context, LLM, Tools
-    Agent->>Loop: run_agent_loop()
+    Agent->>Core: run_agent_loop()
     
-    Loop->>Loop: Build initial messages
-    Loop->>Tools: shell("pwd && ls -la")
-    Tools-->>Loop: Initial state
+    Core->>Core: Build initial messages
+    Core->>Tools: shell pwd and ls
+    Tools-->>Core: Initial state
     
-    loop Main Loop (max 200 iterations)
-        Loop->>Context: manage_context(messages)
-        Context->>Context: Prune images if > 10
+    rect rgb(240, 240, 240)
+        Note over Core,Tools: Main Loop - max 200 iterations
+        Core->>Context: manage_context messages
+        Context->>Context: Prune images if over 10
         Context->>Context: Estimate tokens
-        alt Over 60% threshold
+        alt Over 60 percent threshold
             Context->>Context: Prune old tool outputs
             alt Still over threshold
-                Context->>LLM: AI Compaction (summarize)
+                Context->>LLM: AI Compaction summarize
                 LLM-->>Context: Summary
             end
         end
-        Context-->>Loop: Managed messages
+        Context-->>Core: Managed messages
         
-        Loop->>Loop: Apply prompt caching
-        Loop->>LLM: chat(messages, tools)
-        LLM-->>Loop: Response
+        Core->>Core: Apply prompt caching
+        Core->>LLM: chat messages tools
+        LLM-->>Core: Response
         
         alt Has tool calls
-            loop For each tool call
-                Loop->>Tools: execute(tool_name, args)
-                Tools-->>Loop: ToolResult
-            end
-            Loop->>Loop: Add results to messages
+            Core->>Tools: execute tool_name args
+            Tools-->>Core: ToolResult
+            Core->>Core: Add results to messages
         else No tool calls
             alt No verification yet
-                Loop->>Loop: Inject verification prompt
+                Core->>Core: Inject verification prompt
             else First verification done
-                Loop->>Loop: Inject confirmation prompt
+                Core->>Core: Inject confirmation prompt
             else Confirmed
-                Loop->>Agent: Task complete
+                Core->>Agent: Task complete
             end
         end
     end
